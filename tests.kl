@@ -202,6 +202,64 @@ let parserFoundationTests: [Named Bool] =
       })
   ];
 
+let parserCombinatorTests: [Named Bool] =
+  [ Named "bind uses the parsed value and updated cursor"
+      (runParser (pBind pAnyChar (fn character => pChar character)) "aa!" ==
+        Ok (Parsed "a" (ParseState "aa!" 2))),
+    Named "sequence reports failure after the first parser"
+      (errorAt (runParser (pThen (pChar "a") (pChar "b")) "ax") 1),
+    Named "map can change the result type"
+      (runParser (pMap str_len (pText "ab")) "abc" == Ok (Parsed 2 (ParseState "abc" 2))),
+    Named "then keeps the second value"
+      (runParser (pThen (pChar "a") (pChar "b")) "ab" == Ok (Parsed "b" (ParseState "ab" 2))),
+    Named "before keeps the first value"
+      (runParser (pBefore (pText "ab") pEof) "ab" == Ok (Parsed "ab" (ParseState "ab" 2))),
+    Named "alternative restores input after a partial failure"
+      (runParser (pOr (pText "abx") (pText "ab")) "aby" == Ok (Parsed "ab" (ParseState "aby" 2))),
+    Named "alternative prefers the first success"
+      (runParser (pOr (pText "a") (pText "ab")) "ab" == Ok (Parsed "a" (ParseState "ab" 1))),
+    Named "alternative retains the furthest error"
+      (errorAt (runParser (pOr (pText "abx") (pChar "z")) "aby") 2),
+    Named "alternative error ties prefer the first"
+      (runParser (pOr (pChar "a") (pChar "b")) "x" == runParser (pChar "a") "x"),
+    Named "optional returns a present value"
+      (runParser (pOptional (pChar "a")) "ab" == Ok (Parsed (Some "a") (ParseState "ab" 1))),
+    Named "optional restores input after a partial failure"
+      (runParser (pOptional (pText "ab")) "ax" == Ok (Parsed None (ParseState "ax" 0))),
+    Named "many preserves value order and stops at a mismatch"
+      (runParser (pMany pAnyChar) "ab" == Ok (Parsed ["a", "b"] (ParseState "ab" 2))),
+    Named "many accepts zero matches"
+      (runParser (pMany (pChar "a")) "b" == Ok (Parsed [] (ParseState "b" 0))),
+    Named "many restores the failed iteration's cursor"
+      (runParser (pMany (pText "ab")) "abax" == Ok (Parsed ["ab"] (ParseState "abax" 2))),
+    Named "some accepts one or more matches"
+      (runParser (pSome (pChar "a")) "aa!" == Ok (Parsed ["a", "a"] (ParseState "aa!" 2))),
+    Named "some requires a first match"
+      (errorAt (runParser (pSome (pChar "a")) "b") 0),
+    Named "many rejects an empty text parser"
+      (errorAt (runParser (pMany (pText "")) "abc") 0),
+    Named "some rejects a non-consuming pure parser"
+      (errorAt (runParser (pSome (pPure "value")) "abc") 0),
+    Named "many rejects optional once it stops advancing"
+      (errorAt (runParser (pMany (pOptional (pChar "a"))) "a!") 1),
+    Named "separated list retains items and leaves the suffix"
+      (runParser (pSepBy (pChar "a") (pChar ",")) "a,a!" ==
+        Ok (Parsed ["a", "a"] (ParseState "a,a!" 3))),
+    Named "separated list permits no items"
+      (runParser (pSepBy (pChar "a") (pChar ",")) "" == Ok (Parsed [] (ParseState "" 0))),
+    Named "nonempty separated list consumes its complete input"
+      (runParser (pBefore (pSepBy1 (pChar "a") (pChar ",")) pEof) "a,a" ==
+        Ok (Parsed ["a", "a"] (ParseState "a,a" 3))),
+    Named "nonempty separated list requires an item"
+      (errorAt (runParser (pSepBy1 (pChar "a") (pChar ",")) "") 0),
+    Named "EOF rejects a trailing separator"
+      (errorAt (runParser (pBefore (pSepBy (pChar "a") (pChar ",")) pEof) "a,") 1),
+    Named "separated list propagates a non-consuming suffix error"
+      (errorAt (runParser (pSepBy (pPure "a") (pPure unit)) "") 0),
+    Named "nonempty separated list also guards repetition"
+      (errorAt (runParser (pSepBy1 (pPure "a") (pPure unit)) "") 0)
+  ];
+
 letrec assertParserTests (tests: [Named Bool]): IO Unit =
   match tests {
     [] => pureIO unit;
@@ -215,6 +273,8 @@ letrec assertParserTests (tests: [Named Bool]): IO Unit =
 
 let main: IO Unit = do (bindIO) {
   assertParserTests parserFoundationTests;
+  assertParserTests parserCombinatorTests;
   outputLnIO "AST fixtures compiled successfully.";
-  outputLnIO "Parser foundation: 14 tests passed."
+  outputLnIO "Parser foundation: 14 tests passed.";
+  outputLnIO "Parser combinators: 26 tests passed."
 };

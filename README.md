@@ -1,11 +1,12 @@
 # MiniTS Interpreter - Project 1
 
-## Current milestone: Step 1 - parser foundation
+## Current milestone: Step 2 - parser combinators
 
 The dialect is `pure-hm`. The shared AST and its compilation fixtures are
-complete. Step 1 adds parser input state, errors, character/text matching,
-and EOF checking, with 14 focused tests. MiniTS grammar parsing, checking,
-evaluation, and the public source runner remain later checkpoints.
+complete. Step 1 provides parser input state, errors, character/text matching,
+and EOF checking, with 14 focused tests. Step 2 adds parser combinators with
+26 additional tests. MiniTS grammar parsing, checking, evaluation, and the
+public source runner remain later checkpoints.
 
 The project specification is `Project 1 (MiniTS Interpreter) - CS 150 26.1.pdf`.
 The compiled language reference is `lectures-8-10.pdf`.
@@ -18,7 +19,7 @@ that order, and supplies the sole `main: IO Unit`. Library files have no
 
 ## Parser foundation
 
-`support.kl` defines `Result a e = Ok a | Err e`. Parser primitives operate
+`helpers/support.kl` defines `Result a e = Ok a | Err e`. Parser primitives operate
 directly on immutable `ParseState source offset` values, with a zero-based
 offset into the KLang string. `Parsed value nextState` carries a success;
 `ParseError offset message` records failure at the first mismatching position.
@@ -33,8 +34,37 @@ Callers retain the original state when a match fails.
 | `pEof state` | Succeeds without advancing only at the end of input. |
 
 Text matching has no keyword-boundary policy: `pText "let"` matches the prefix
-of `letter`. Whitespace/comments are not skipped. Those policies and parser
-combinators belong to later checkpoints. No public MiniTS `parse` exists yet.
+of `letter`. Whitespace/comments are not skipped. Those policies belong to
+later checkpoints. No public MiniTS `parse` exists yet.
+
+## Parser combinators
+
+All combinators return parsers and retain the original source text.
+
+| Entry point | Behavior |
+| --- | --- |
+| `pPure value` | Succeeds without consuming input. |
+| `pBind parser next` | Feeds the parsed value to the next parser at the updated cursor. |
+| `pMap transform parser` | Transforms a success value, possibly changing its type. |
+| `pThen first second` | Sequences parsers and keeps the second value. |
+| `pBefore first second` | Sequences parsers and keeps the first value. |
+| `pOr first second` | Uses the first success; retries the second at the original state on failure. |
+| `pOptional parser` | Returns `Some value`, or `None` at the original state on failure. |
+| `pMany parser` | Parses zero or more items in order. |
+| `pSome parser` | Parses one or more items in order. |
+| `pSepBy parser separator` | Parses a possibly empty separated list. |
+| `pSepBy1 parser separator` | Parses a nonempty separated list. |
+
+When both alternatives fail, `pOr` retains the error with the greater offset;
+ties prefer the first error. Failed optional input and failed repetition
+iterations restore their starting cursor, including after partial matches.
+Successful repetition must advance the cursor; otherwise it returns a
+`ParseError` rather than looping. This guard also applies to repeated
+separator/item pairs and is propagated by the separated-list combinators.
+
+A trailing separator is left unconsumed when no item follows. Use a closing
+delimiter or `pEof` after a list to require complete input and reject it.
+No combinator skips whitespace, recognizes tokens, or implements MiniTS grammar.
 
 ## AST conventions
 
@@ -110,6 +140,7 @@ Require exit status zero and this output:
 ```text
 AST fixtures compiled successfully.
 Parser foundation: 14 tests passed.
+Parser combinators: 26 tests passed.
 ```
 
 Neither command writes generated Python: IR prints to standard output, and

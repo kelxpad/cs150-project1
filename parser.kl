@@ -1,4 +1,4 @@
-# Loaded after support.kl. Offsets count KLang string positions from zero.
+# Loaded after helpers/support.kl. Offsets count KLang string positions from zero.
 # Valid states have 0 <= offset <= str_len source. State is immutable.
 type ParseState = ParseState String Int;
 type ParseError = ParseError Int String;
@@ -29,10 +29,13 @@ let pChar (expected: String) (state: ParseState): Result (Parsed String) ParseEr
       else Err (ParseError offset (str_concat "expected " (show expected)));
   };
 
-# Report the first mismatching position, including EOF in a partial match.
-# Errors contain no replacement state; callers retain their original input.
-letrec matchTextAt (expected: String) (source: String) (offset: Int) (index: Int)
-                   : Result (Parsed String) ParseError =
+# Report the first mismatching position, including EOF in a partial 
+# match.
+# Errors contain no replacement state; callers retain their original 
+# input.
+letrec matchTextAt (expected: String) 
+  (source: String) 
+  (offset: Int) (index: Int): Result (Parsed String) ParseError =
   if index == str_len expected then
     Ok (Parsed expected (ParseState source offset))
   else if offset >= str_len source then
@@ -52,4 +55,84 @@ let pEof (state: ParseState): Result (Parsed Unit) ParseError =
     ParseState source offset =>
       if offset == str_len source then Ok (Parsed unit state)
       else Err (ParseError offset "expected end of input");
+  };
+
+# Step 2: parser composition. No whitespace or grammar policy is added here.
+let pPure (value: a) (state: ParseState): Result (Parsed a) ParseError =
+  Ok (Parsed value state);
+
+let pBind (parser: Parser a) (next: a -> Parser b)
+          (state: ParseState): Result (Parsed b) ParseError =
+  match parser state {
+    Err error => Err error;
+    Ok (Parsed value after) => next value after;
+  };
+
+let pMap (transform: a -> b) (parser: Parser a): Parser b =
+  pBind parser (fn value => pPure (transform value));
+
+let pThen (first: Parser a) (second: Parser b): Parser b =
+  pBind first (fn _ => second);
+
+let pBefore (first: Parser a) (second: Parser b): Parser a =
+  pBind first (fn value => pMap (fn _ => value) second);
+
+# Alternatives always retry from the original state. On two failures, keep
+# the error furthest into the input; equal offsets prefer the first error.
+let pOr (first: Parser a) (second: Parser a)
+        (state: ParseState): Result (Parsed a) ParseError =
+  match first state {
+    Ok parsed => Ok parsed;
+    Err firstError =>
+      match second state {
+        Ok parsed => Ok parsed;
+        Err secondError =>
+          match firstError, secondError {
+            ParseError firstOffset _, ParseError secondOffset _ =>
+              if secondOffset > firstOffset then Err secondError else Err firstError;
+          };
+      };
+  };
+
+let pOptional (parser: Parser a) (state: ParseState)
+              : Result (Parsed (Option a)) ParseError =
+  match parser state {
+    Ok (Parsed value after) => Ok (Parsed (Some value) after);
+    Err _ => Ok (Parsed None state);
+  };
+
+# A failed iteration leaves its input unconsumed, including a partial match.
+# A successful iteration MUST advance: nullable parsers would otherwise loop.
+letrec pMany (parser: Parser a) (state: ParseState)
+             : Result (Parsed [a]) ParseError =
+  match parser state {
+    Err _ => Ok (Parsed [] state);
+    Ok (Parsed value after) =>
+      match state, after {
+        ParseState _ beforeOffset, ParseState _ afterOffset =>
+          if afterOffset <= beforeOffset then
+            Err (ParseError beforeOffset "repeated parser must advance the cursor")
+          else match pMany parser after {
+            Err error => Err error;
+            Ok (Parsed values finalState) => Ok (Parsed (value :: values) finalState);
+          };
+      };
+  };
+
+let pSome (parser: Parser a): Parser [a] =
+  pBind parser (fn first => pMap (fn rest => first :: rest) (pMany parser));
+
+let pSepBy1 (parser: Parser a) (separator: Parser b): Parser [a] =
+  pBind parser (fn first =>
+    pMap (fn rest => first :: rest) (pMany (pThen separator parser)));
+
+# Only failure of the first item permits an empty list. Errors from the
+# repetition guard propagate. A separator without an item stays unconsumed,
+# so a subsequent closing delimiter or EOF check can reject it.
+let pSepBy (parser: Parser a) (separator: Parser b)
+           (state: ParseState): Result (Parsed [a]) ParseError =
+  match parser state {
+    Err _ => Ok (Parsed [] state);
+    Ok (Parsed first after) =>
+      pMap (fn rest => first :: rest) (pMany (pThen separator parser)) after;
   };
