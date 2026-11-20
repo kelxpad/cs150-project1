@@ -1,0 +1,67 @@
+# MiniTS syntax for Project 1, section 1a.
+# These definitions describe source programs. Runtime values come later.
+
+type alias Identifier = String;
+
+# Ordered named items preserve parameter/field names, order, and duplicates.
+type Named a = Named Identifier a;
+
+# Function-type parameter names are retained for annotation validation.
+# Semantic type equality must later ignore those names and record field order.
+type Type
+  = TNumber
+  | TBoolean
+  | TString
+  | TNull
+  | TFunction [Named Type] Type
+  | TRecord [Named Type];
+
+type UnaryOp
+  = UNegate
+  | UNot;
+
+type BinaryOp
+  = BAdd
+  | BSubtract
+  | BMultiply
+  | BDivide
+  | BLess
+  | BLessEqual
+  | BGreater
+  | BGreaterEqual
+  | BStrictEqual
+  | BStrictNotEqual
+  | BAnd
+  | BOr;
+
+# Numbers use Float. Literal validity belongs to the future text parser.
+# Only identifiers can be assigned. Both arrow annotations are mandatory.
+# Arguments and record fields stay in source order for later evaluation.
+# Parentheses are represented by nesting expressions, without a separate node.
+type Expr
+  = ENumber Float
+  | EBool Bool
+  | EString String
+  | ENull
+  | EVar Identifier
+  | EAssign Identifier Expr
+  | EUnary UnaryOp Expr
+  | EBinary BinaryOp Expr Expr
+  | EArrow [Named Type] Type Expr
+  | ECall Expr [Expr]
+  | ERecord [Named Expr]
+  | EField Expr Identifier;
+
+# Every let has an initializer; None requests later type synthesis.
+# Its initializer is checked/evaluated before the new binding becomes visible.
+# SIf branches and SWhile bodies are block contents, each with a fresh scope.
+# An omitted else is represented by an empty second branch.
+type Stmt
+  = SLet Identifier (Option Type) Expr
+  | SExpr Expr
+  | SBlock [Stmt]
+  | SIf Expr [Stmt] [Stmt]
+  | SWhile Expr [Stmt];
+
+# A program is a global sequence, not an implicit SBlock.
+type alias Program = [Stmt];

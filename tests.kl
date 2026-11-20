@@ -1,0 +1,157 @@
+include "syntax.kl";
+
+# Compile-time fixtures for the section 1a representation contract.
+# These are MiniTS AST values, not parsed or executed MiniTS programs.
+# Explicit KLang annotations check constructor payloads and composition.
+
+let primitiveTypes: [Type] = [TNumber, TBoolean, TString, TNull];
+let emptyRecordType: Type = TRecord [];
+let zeroParameterType: Type = TFunction [] TNumber;
+let higherOrderType: Type =
+  TFunction
+    [ Named "f" (TFunction [Named "x" TNumber] TNumber)
+    , Named "x" TNumber
+    ]
+    TNumber;
+let nestedRecordType: Type =
+  TRecord
+    [ Named "name" TString
+    , Named "profile" (TRecord [Named "active" TBoolean])
+    , Named "next" zeroParameterType
+    ];
+
+# Raw syntax retains duplicates so the future checker can reject them.
+let duplicateTypeParameterNames: Type =
+  TFunction [Named "x" TNumber, Named "x" TString] TNull;
+let duplicateTypeFieldNames: Type =
+  TRecord [Named "value" TNumber, Named "value" TString];
+let duplicateRecordFieldNames: Expr =
+  ERecord [Named "value" (ENumber 1.0), Named "value" (EString "second")];
+
+let literals: [Expr] =
+  [ENumber 1.5, EBool true, EBool false, EString "MiniTS\n", ENull];
+let unaryExpressions: [Expr] =
+  [EUnary UNegate (ENumber 1.0), EUnary UNot (EBool false)];
+let binaryExpressions: [Expr] =
+  [ EBinary BAdd (ENumber 1.0) (ENumber 2.0)
+  , EBinary BAdd (EString "Hello, ") (EString "MiniTS")
+  , EBinary BSubtract (ENumber 5.0) (ENumber 2.0)
+  , EBinary BMultiply (ENumber 3.0) (ENumber 4.0)
+  , EBinary BDivide (ENumber 5.0) (ENumber 2.0)
+  , EBinary BLess (ENumber 1.0) (ENumber 2.0)
+  , EBinary BLessEqual (ENumber 2.0) (ENumber 2.0)
+  , EBinary BGreater (ENumber 3.0) (ENumber 2.0)
+  , EBinary BGreaterEqual (ENumber 2.0) (ENumber 2.0)
+  , EBinary BStrictEqual (EString "same") (EString "same")
+  , EBinary BStrictNotEqual ENull ENull
+  , EBinary BAnd (EBool true) (EBool false)
+  , EBinary BOr (EBool false) (EBool true)
+  ];
+
+let leftAssociatedSubtraction: Expr =
+  EBinary BSubtract
+    (EBinary BSubtract (ENumber 10.0) (ENumber 3.0))
+    (ENumber 2.0);
+let rightAssociatedAssignment: Expr =
+  EAssign "x" (EAssign "y" (ENumber 1.0));
+let chainedPostfix: Expr =
+  ECall (EField (ECall (EVar "factory") []) "run") [ENumber 1.0];
+let orderedArguments: Expr =
+  ECall (EVar "pair")
+    [EAssign "x" (ENumber 1.0), EAssign "x" (ENumber 2.0)];
+let orderedRecordFields: Expr =
+  ERecord
+    [ Named "first" (EAssign "x" (ENumber 1.0))
+    , Named "second" (EAssign "x" (ENumber 2.0))
+    ];
+let emptyRecord: Expr = ERecord [];
+
+let emptyProgram: Program = [];
+let emptyBlock: Stmt = SBlock [];
+let blocksAndControlFlow: Program =
+  [ SLet "n" (Some TNumber) (ENumber 0.0)
+  , SBlock [SBlock []]
+  , SIf (EBool true)
+      [SExpr (EAssign "n" (ENumber 1.0))]
+      [SExpr (EAssign "n" (ENumber 2.0))]
+  , SIf (EBool false) [SBlock []] []
+  , SWhile (EBinary BLess (EVar "n") (ENumber 3.0))
+      [SExpr (EAssign "n" (EBinary BAdd (EVar "n") (ENumber 1.0)))]
+  , SWhile (EBool false) []
+  ];
+
+# The inner initializer retains a reference to x for later scope resolution.
+let initializerUsesOuterBinding: Program =
+  [ SLet "x" None (ENumber 1.0)
+  , SBlock [SLet "x" None (EBinary BAdd (EVar "x") (ENumber 1.0))]
+  ];
+
+# Section 1c: factorial with mutable variables and a while block.
+let factorialProgram: Program =
+  [ SLet "n" (Some TNumber) (ENumber 5.0)
+  , SLet "result" None (ENumber 1.0)
+  , SWhile (EBinary BGreater (EVar "n") (ENumber 1.0))
+      [ SExpr (EAssign "result"
+          (EBinary BMultiply (EVar "result") (EVar "n")))
+      , SExpr (EAssign "n"
+          (EBinary BSubtract (EVar "n") (ENumber 1.0)))
+      ]
+  ];
+
+# Section 1c: a zero-argument arrow that will capture counter at runtime.
+let counterProgram: Program =
+  [ SLet "counter" None (ENumber 0.0)
+  , SLet "next" None
+      (EArrow [] TNumber
+        (EAssign "counter" (EBinary BAdd (EVar "counter") (ENumber 1.0))))
+  , SLet "a" None (ECall (EVar "next") [])
+  , SLet "b" None (ECall (EVar "next") [])
+  ];
+
+# Section 1c: returning a function requires a nested function annotation.
+let makeAdderProgram: Program =
+  [ SLet "makeAdder" None
+      (EArrow [Named "n" TNumber]
+        (TFunction [Named "x" TNumber] TNumber)
+        (EArrow [Named "x" TNumber] TNumber
+          (EBinary BAdd (EVar "x") (EVar "n"))))
+  , SLet "addFive" None (ECall (EVar "makeAdder") [ENumber 5.0])
+  , SLet "result" None (ECall (EVar "addFive") [ENumber 10.0])
+  ];
+
+# Section 1c: immutable record construction and field access.
+let studentProgram: Program =
+  [ SLet "student" None
+      (ERecord [Named "name" (EString "Alice"), Named "year" (ENumber 2026.0)])
+  , SLet "name" None (EField (EVar "student") "name")
+  , SLet "nextYear" None
+      (EBinary BAdd (EField (EVar "student") "year") (ENumber 1.0))
+  ];
+
+# Section 6a: accepting a function and calling it twice.
+let higherOrderProgram: Program =
+  [ SLet "applyTwice" None
+      (EArrow
+        [Named "f" (TFunction [Named "x" TNumber] TNumber), Named "x" TNumber]
+        TNumber
+        (ECall (EVar "f") [ECall (EVar "f") [EVar "x"]]))
+  , SLet "increment" None
+      (EArrow [Named "n" TNumber] TNumber
+        (EBinary BAdd (EVar "n") (ENumber 1.0)))
+  , SLet "result" None
+      (ECall (EVar "applyTwice") [EVar "increment", ENumber 10.0])
+  ];
+
+# Recursion is expressed by assignment after the function variable is declared.
+let assignmentRecursionProgram: Program =
+  [ SLet "countdown" None (EArrow [Named "n" TNumber] TBoolean (EBool false))
+  , SExpr (EAssign "countdown"
+      (EArrow [Named "n" TNumber] TBoolean
+        (EBinary BOr
+          (EBinary BStrictEqual (EVar "n") (ENumber 0.0))
+          (ECall (EVar "countdown")
+            [EBinary BSubtract (EVar "n") (ENumber 1.0)]))))
+  , SLet "result" None (ECall (EVar "countdown") [ENumber 3.0])
+  ];
+
+let main: IO Unit = outputLnIO "AST fixtures compiled successfully.";
