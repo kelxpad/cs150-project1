@@ -1,19 +1,42 @@
 # MiniTS Interpreter - Project 1
 
-## Current milestone: section 1a
+## Current milestone: Step 1 - parser foundation
 
-The dialect is `pure-hm`. This milestone defines the syntax tree for all
-supported MiniTS constructs. `tests.kl` constructs explicitly typed AST
-fixtures; it does not parse, type-check, or execute MiniTS source programs.
-The parser, checker, evaluator, and public runner are later milestones.
+The dialect is `pure-hm`. The shared AST and its compilation fixtures are
+complete. Step 1 adds parser input state, errors, character/text matching,
+and EOF checking, with 14 focused tests. MiniTS grammar parsing, checking,
+evaluation, and the public source runner remain later checkpoints.
 
 The project specification is `Project 1 (MiniTS Interpreter) - CS 150 26.1.pdf`.
 The compiled language reference is `lectures-8-10.pdf`.
 
-## AST conventions
+## Library loading
 
-`syntax.kl` contains reusable definitions without a `main`. `tests.kl` loads
-them with `include "syntax.kl";` and supplies the sole `main: IO Unit`.
+`tests.kl` includes `syntax.kl`, `helpers/support.kl`, and `parser.kl` exactly once in
+that order, and supplies the sole `main: IO Unit`. Library files have no
+`main` or internal includes.
+
+## Parser foundation
+
+`support.kl` defines `Result a e = Ok a | Err e`. Parser primitives operate
+directly on immutable `ParseState source offset` values, with a zero-based
+offset into the KLang string. `Parsed value nextState` carries a success;
+`ParseError offset message` records failure at the first mismatching position.
+Callers retain the original state when a match fails.
+
+| Entry point | Behavior |
+| --- | --- |
+| `runParser parser source` | Starts the parser at offset zero; does not require EOF. |
+| `pAnyChar state` | Consumes one character or fails at EOF. |
+| `pChar expected state` | Matches exactly one character; rejects other matcher lengths. |
+| `pText expected state` | Matches exact text; empty text succeeds without advancing. |
+| `pEof state` | Succeeds without advancing only at the end of input. |
+
+Text matching has no keyword-boundary policy: `pText "let"` matches the prefix
+of `letter`. Whitespace/comments are not skipped. Those policies and parser
+combinators belong to later checkpoints. No public MiniTS `parse` exists yet.
+
+## AST conventions
 
 | Construct | Representation |
 | --- | --- |
@@ -73,19 +96,20 @@ The bridge requires an explicit dialect even though `dialect.txt` records the
 submission choice. Type-check the real test entry point and its include:
 
 ```sh
-klangb --emit-ir=typed --dialect pure-hm /mnt/d/cs150/projects/proj1/tests.kl
+klangb --emit-ir=typed --dialect pure-hm /mnt/d/cs150/projects/cs150-project1/tests.kl
 ```
 
 Require exit status zero and typed IR output. Then run the fixture harness:
 
 ```sh
-klangb run --dialect pure-hm /mnt/d/cs150/projects/proj1/tests.kl
+klangb run --dialect pure-hm /mnt/d/cs150/projects/cs150-project1/tests.kl
 ```
 
 Require exit status zero and this output:
 
 ```text
 AST fixtures compiled successfully.
+Parser foundation: 14 tests passed.
 ```
 
 Neither command writes generated Python: IR prints to standard output, and
@@ -140,7 +164,7 @@ from tempfile import TemporaryDirectory
 import shutil
 import subprocess
 
-source = Path('/mnt/d/cs150/projects/proj1/syntax.kl')
+source = Path('/mnt/d/cs150/projects/cs150-project1/syntax.kl')
 probes = {
     'missing-initializer': 'let invalid: Stmt = SLet "x" None;',
     'missing-parameter-annotation':

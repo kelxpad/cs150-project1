@@ -1,0 +1,2 @@
+# Shared result type: success comes first, error second.
+type Result a e = Ok a | Err e;

@@ -1,0 +1,55 @@
+# Loaded after support.kl. Offsets count KLang string positions from zero.
+# Valid states have 0 <= offset <= str_len source. State is immutable.
+type ParseState = ParseState String Int;
+type ParseError = ParseError Int String;
+type Parsed a = Parsed a ParseState;
+type alias Parser a = ParseState -> Result (Parsed a) ParseError;
+
+let runParser (parser: Parser a) (source: String): Result (Parsed a) ParseError =
+  parser (ParseState source 0);
+
+let pAnyChar (state: ParseState): Result (Parsed String) ParseError =
+  match state {
+    ParseState source offset =>
+      if offset >= str_len source then
+        Err (ParseError offset "expected a character")
+      else Ok (Parsed (str_slice source offset (offset + 1))
+        (ParseState source (offset + 1)));
+  };
+
+let pChar (expected: String) (state: ParseState): Result (Parsed String) ParseError =
+  match state {
+    ParseState source offset =>
+      if str_len expected != 1 then
+        Err (ParseError offset "pChar requires exactly one character")
+      else if offset >= str_len source then
+        Err (ParseError offset (str_concat "expected " (show expected)))
+      else if str_slice source offset (offset + 1) == expected then
+        Ok (Parsed expected (ParseState source (offset + 1)))
+      else Err (ParseError offset (str_concat "expected " (show expected)));
+  };
+
+# Report the first mismatching position, including EOF in a partial match.
+# Errors contain no replacement state; callers retain their original input.
+letrec matchTextAt (expected: String) (source: String) (offset: Int) (index: Int)
+                   : Result (Parsed String) ParseError =
+  if index == str_len expected then
+    Ok (Parsed expected (ParseState source offset))
+  else if offset >= str_len source then
+    Err (ParseError offset (str_concat "expected " (show expected)))
+  else if str_slice source offset (offset + 1) != str_slice expected index (index + 1) then
+    Err (ParseError offset (str_concat "expected " (show expected)))
+  else matchTextAt expected source (offset + 1) (index + 1);
+
+let pText (expected: String) (state: ParseState): Result (Parsed String) ParseError =
+  match state {
+    ParseState source offset => matchTextAt expected source offset 0;
+  };
+
+# EOF consumes nothing and does not skip whitespace or comments.
+let pEof (state: ParseState): Result (Parsed Unit) ParseError =
+  match state {
+    ParseState source offset =>
+      if offset == str_len source then Ok (Parsed unit state)
+      else Err (ParseError offset "expected end of input");
+  };
